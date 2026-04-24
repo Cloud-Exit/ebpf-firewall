@@ -14,6 +14,39 @@ import (
 )
 
 func Fetch(ctx context.Context, sourceURL string) ([]netip.Prefix, error) {
+	sourceURLs := splitSourceURLs(sourceURL)
+	if len(sourceURLs) == 0 {
+		return nil, fmt.Errorf("at least one allowlist source URL is required")
+	}
+	if len(sourceURLs) > 1 {
+		return fetchMany(ctx, sourceURLs)
+	}
+	return fetchOne(ctx, sourceURLs[0])
+}
+
+func fetchMany(ctx context.Context, sourceURLs []string) ([]netip.Prefix, error) {
+	prefixes := []netip.Prefix{}
+	seen := map[netip.Prefix]struct{}{}
+
+	for _, sourceURL := range sourceURLs {
+		sourcePrefixes, err := fetchOne(ctx, sourceURL)
+		if err != nil {
+			return nil, fmt.Errorf("fetch %s: %w", sourceURL, err)
+		}
+
+		for _, prefix := range sourcePrefixes {
+			if _, ok := seen[prefix]; ok {
+				continue
+			}
+			prefixes = append(prefixes, prefix)
+			seen[prefix] = struct{}{}
+		}
+	}
+
+	return prefixes, nil
+}
+
+func fetchOne(ctx context.Context, sourceURL string) ([]netip.Prefix, error) {
 	var reader io.ReadCloser
 
 	if strings.HasPrefix(sourceURL, "file://") {
@@ -42,6 +75,18 @@ func Fetch(ctx context.Context, sourceURL string) ([]netip.Prefix, error) {
 	defer reader.Close()
 
 	return Parse(reader)
+}
+
+func splitSourceURLs(raw string) []string {
+	parts := strings.Split(raw, ",")
+	sourceURLs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			sourceURLs = append(sourceURLs, part)
+		}
+	}
+	return sourceURLs
 }
 
 func Parse(reader io.Reader) ([]netip.Prefix, error) {

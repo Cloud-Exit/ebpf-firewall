@@ -84,7 +84,7 @@ The Helm chart writes these values into a ConfigMap mounted by the daemon:
 
 | Key | Helm value | Example | Description |
 | --- | --- | --- | --- |
-| `source_url` | `config.sourceUrl` | `https://example.com/allowlist.txt` | URL containing one IPv4 address or CIDR per line. |
+| `source_url` | `config.sourceUrl` | `https://example.com/team-a.txt,https://example.com/team-b.txt` | One URL, or a comma-separated list of URLs, each containing one IPv4 address or CIDR per line. |
 | `protected_ports` | `config.protectedPorts` | `22,443` | Comma, space, or newline separated ports to protect. Use `*` to protect every TCP/UDP port. |
 | `interface_globs` | `config.interfaceGlobs` | `eth0,cni0,veth*` | Interface names or globs where ingress filters should be attached. |
 | `refresh_interval` | `config.refreshInterval` | `30s` | Config and allowlist refresh cadence. |
@@ -116,6 +116,21 @@ helm upgrade --install ebpf-firewall charts/ebpf-firewall \
   --set-string config.protectedPorts='22\,443' \
   --set-string config.interfaceGlobs='eth0'
 ```
+
+Multiple allowlist sources are supported. Because Helm treats commas in `--set` values as separators, escape commas when setting `config.sourceUrl` from the CLI:
+
+```bash
+helm upgrade --install ebpf-firewall charts/ebpf-firewall \
+  --namespace ebpf-firewall \
+  --create-namespace \
+  --set image.repository=your-registry/ebpf-firewall-k8s \
+  --set image.tag=your-tag \
+  --set-string config.sourceUrl='https://example.com/team-a.txt\,https://example.com/team-b.txt' \
+  --set-string config.protectedPorts='22\,443' \
+  --set-string config.interfaceGlobs='eth0'
+```
+
+Entries from all allowlist sources are merged and de-duplicated. If any source cannot be fetched or parsed, the daemon keeps retrying on the next refresh interval and leaves the previously loaded eBPF maps in place.
 
 To protect every TCP/UDP destination port on matching interfaces:
 
