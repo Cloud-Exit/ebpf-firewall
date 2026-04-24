@@ -99,6 +99,14 @@ kubectl -n e2e rollout status deployment/allowlist-server --timeout=120s
 echo "waiting for e2e protected-server daemonset"
 kubectl -n e2e rollout status daemonset/protected-server --timeout=120s
 
+kubectl -n e2e run e2e-client \
+  --restart=Never \
+  --image="$HTTP_IMAGE" \
+  --image-pull-policy=IfNotPresent \
+  --overrides="{\"spec\":{\"nodeName\":\"${CLUSTER_NAME}-worker\"}}" \
+  --env="LISTEN_ADDR=127.0.0.1:18081"
+kubectl -n e2e wait --for=condition=Ready pod/e2e-client --timeout=120s
+
 helm upgrade --install ebpf-firewall charts/ebpf-firewall \
   --namespace ebpf-firewall \
   --create-namespace \
@@ -116,12 +124,9 @@ sleep 8
 
 NODE_IP="$(kubectl get node "$CLUSTER_NAME-worker" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
 
-kubectl -n e2e run allow-check \
-  --rm -i --restart=Never \
-  --image="$HTTP_IMAGE" \
-  --image-pull-policy=IfNotPresent \
-  --env="CLIENT_URL=http://${NODE_IP}:18080" \
-  --env="EXPECT_BODY=protected-ok"
+kubectl -n e2e exec e2e-client -- /e2e-http-server \
+  --client-url="http://${NODE_IP}:18080" \
+  --expect-body="protected-ok"
 
 kubectl -n e2e create configmap allowlist \
   --from-literal=allowlist.txt="203.0.113.1/32" \
@@ -132,11 +137,8 @@ kubectl -n e2e rollout status deployment/allowlist-server --timeout=120s
 
 sleep 8
 
-kubectl -n e2e run deny-check \
-  --rm -i --restart=Never \
-  --image="$HTTP_IMAGE" \
-  --image-pull-policy=IfNotPresent \
-  --env="CLIENT_URL=http://${NODE_IP}:18080" \
-  --env="EXPECT_FAILURE=true"
+kubectl -n e2e exec e2e-client -- /e2e-http-server \
+  --client-url="http://${NODE_IP}:18080" \
+  --expect-failure
 
 echo "kind e2e passed"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -12,8 +13,16 @@ import (
 )
 
 func main() {
-	if url := os.Getenv("CLIENT_URL"); url != "" {
-		runClient(url)
+	var clientURL string
+	var expectBody string
+	var expectFailure bool
+	flag.StringVar(&clientURL, "client-url", os.Getenv("CLIENT_URL"), "URL to request in client mode")
+	flag.StringVar(&expectBody, "expect-body", os.Getenv("EXPECT_BODY"), "response body substring required in client mode")
+	flag.BoolVar(&expectFailure, "expect-failure", os.Getenv("EXPECT_FAILURE") == "true", "expect the client request to fail")
+	flag.Parse()
+
+	if clientURL != "" {
+		runClient(clientURL, expectBody, expectFailure)
 		return
 	}
 
@@ -41,10 +50,7 @@ func main() {
 	}
 }
 
-func runClient(url string) {
-	expectFailure := os.Getenv("EXPECT_FAILURE") == "true"
-	expectBody := os.Getenv("EXPECT_BODY")
-
+func runClient(url, expectBody string, expectFailure bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 
