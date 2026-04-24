@@ -1,0 +1,52 @@
+image:
+  repository: ebpf-allowlist-firewall
+  tag: dev
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+config:
+  sourceUrl: "https://example.com/allowlist.txt"
+  protectedPorts: "*"
+  interfaceGlobs: "eth0"
+  refreshInterval: "30s"
+  maxEntries: "4096"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations:
+  - operator: Exists
+affinity: {}
+
+priorityClassName: ""
+
+securityContext:
+  privileged: true
+  capabilities:
+    add:
+      - NET_ADMIN
+      - BPF
+      - PERFMON
+      - IPC_LOCK
+      - SYS_RESOURCE
+      - SYS_ADMIN
+
+hostNetwork: true
+dnsPolicy: ClusterFirstWithHostNet

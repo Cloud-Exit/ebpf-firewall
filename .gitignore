@@ -1,0 +1,8 @@
+.env
+.cache/
+/ebpf-firewall
+__pycache__/
+*.py[cod]
+
+.codex
+

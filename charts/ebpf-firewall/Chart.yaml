@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ebpf-firewall
+description: Node-local eBPF allowlist firewall managed by a ConfigMap.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

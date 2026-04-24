@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ebpf-firewall.fullname" . }}
+  labels:
+    {{- include "ebpf-firewall.labels" . | nindent 4 }}
+data:
+  source_url: {{ .Values.config.sourceUrl | quote }}
+  protected_ports: {{ .Values.config.protectedPorts | quote }}
+  interface_globs: {{ .Values.config.interfaceGlobs | quote }}
+  refresh_interval: {{ .Values.config.refreshInterval | quote }}
+  max_entries: {{ .Values.config.maxEntries | quote }}

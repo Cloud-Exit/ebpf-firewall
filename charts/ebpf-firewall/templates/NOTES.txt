@@ -1,0 +1,4 @@
+The eBPF firewall DaemonSet is installed.
+
+It protects TCP/UDP ports {{ .Values.config.protectedPorts | quote }} on interfaces matching {{ .Values.config.interfaceGlobs | quote }}.
+Allowlist entries are fetched from {{ .Values.config.sourceUrl | quote }}.
