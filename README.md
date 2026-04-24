@@ -191,6 +191,7 @@ The workflow:
 
 - Runs `go test ./...`.
 - Runs `helm lint`.
+- Runs the Kind e2e test with `make e2e-kind`.
 - Builds and pushes the container image to GHCR as `ghcr.io/<owner>/<repo>:sha-<short-sha>` and `latest`.
 - Bumps the chart version inside the CI workspace from the checked-in major/minor version to `<major>.<minor>.<github-run-number>`.
 - Sets the chart `appVersion` to the short commit SHA.
@@ -198,6 +199,8 @@ The workflow:
 - Creates a GitHub Release named `ebpf-firewall <version>` with the chart archive attached.
 
 The version bump is applied to the packaged release artifact during CI; it is not committed back to the repository.
+
+The CI e2e job configures Docker with an unlimited `memlock` ulimit before creating the Kind cluster. This is required because eBPF map creation can fail inside Kind when the node container inherits a low locked-memory limit.
 
 ## License
 
