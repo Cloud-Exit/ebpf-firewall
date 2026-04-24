@@ -1,6 +1,9 @@
 package firewall
 
-import "testing"
+import (
+	"net/netip"
+	"testing"
+)
 
 func TestMatchesAny(t *testing.T) {
 	tests := []struct {
@@ -17,5 +20,18 @@ func TestMatchesAny(t *testing.T) {
 		if got := matchesAny(tt.name, tt.globs); got != tt.want {
 			t.Fatalf("matchesAny(%q, %v) = %v, want %v", tt.name, tt.globs, got, tt.want)
 		}
+	}
+}
+
+func TestLPMKeyFromPrefixUsesNetworkOrderBytes(t *testing.T) {
+	prefix := netip.MustParsePrefix("10.244.0.0/16")
+
+	key := lpmKeyFromPrefix(prefix)
+
+	if key.PrefixLen != 16 {
+		t.Fatalf("PrefixLen = %d, want 16", key.PrefixLen)
+	}
+	if key.Addr != [4]byte{10, 244, 0, 0} {
+		t.Fatalf("Addr = %v, want [10 244 0 0]", key.Addr)
 	}
 }

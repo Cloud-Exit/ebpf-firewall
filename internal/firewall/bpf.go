@@ -2,7 +2,6 @@ package firewall
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
@@ -30,7 +29,7 @@ const (
 
 type lpmKey struct {
 	PrefixLen uint32
-	Addr      uint32
+	Addr      [4]byte
 }
 
 type Objects struct {
@@ -224,16 +223,20 @@ func replaceAllowlist(m *ebpf.Map, prefixes []netip.Prefix) error {
 
 	var value uint8 = 1
 	for _, prefix := range prefixes {
-		addr := prefix.Masked().Addr().As4()
-		key := lpmKey{
-			PrefixLen: uint32(prefix.Bits()),
-			Addr:      binary.BigEndian.Uint32(addr[:]),
-		}
+		key := lpmKeyFromPrefix(prefix)
 		if err := m.Update(key, value, ebpf.UpdateAny); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func lpmKeyFromPrefix(prefix netip.Prefix) lpmKey {
+	addr := prefix.Masked().Addr().As4()
+	return lpmKey{
+		PrefixLen: uint32(prefix.Bits()),
+		Addr:      addr,
+	}
 }
 
 func clearMap[K any](m *ebpf.Map) error {
@@ -321,6 +324,7 @@ func ingressInstructions() asm.Instructions {
 		asm.JEq.Imm(asm.R0, 0, "allow"),
 
 		asm.LoadAbs(26, asm.Word).WithSymbol("check_source"),
+		asm.HostTo(asm.BE, asm.R0, asm.Word),
 		asm.StoreImm(asm.R10, -8, 32, asm.Word),
 		asm.StoreMem(asm.R10, -4, asm.R0, asm.Word),
 		asm.LoadMapPtr(asm.R1, 0).WithReference("allowed_sources"),
