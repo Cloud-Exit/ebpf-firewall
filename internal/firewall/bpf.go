@@ -283,6 +283,8 @@ func collectionSpec(maxEntries uint32) *ebpf.CollectionSpec {
 
 func ingressInstructions() asm.Instructions {
 	return asm.Instructions{
+		asm.Mov.Reg(asm.R6, asm.R1),
+
 		asm.LoadAbs(12, asm.Half),
 		asm.JNE.Imm(asm.R0, ethPIP, "allow"),
 
@@ -297,10 +299,10 @@ func ingressInstructions() asm.Instructions {
 		asm.And.Imm(asm.R0, 0x0f),
 		asm.JLT.Imm(asm.R0, 5, "drop"),
 		asm.LSh.Imm(asm.R0, 2),
-		asm.Mov.Reg(asm.R6, asm.R0),
-		asm.Add.Imm(asm.R6, 14),
+		asm.Mov.Reg(asm.R7, asm.R0),
+		asm.Add.Imm(asm.R7, 14),
 
-		asm.LoadInd(asm.R0, asm.R6, 2, asm.Half),
+		asm.LoadInd(asm.R0, asm.R7, 2, asm.Half),
 		asm.StoreMem(asm.R10, -2, asm.R0, asm.Half),
 
 		asm.StoreImm(asm.R10, -12, 0, asm.Word),
