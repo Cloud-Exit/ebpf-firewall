@@ -1,5 +1,8 @@
 # ebpf-firewall-k8s
 
+[![Release](https://github.com/Cloud-Exit/ebpf-firewall/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/Cloud-Exit/ebpf-firewall/actions/workflows/release.yml)
+[![Last commit](https://img.shields.io/github/last-commit/Cloud-Exit/ebpf-firewall/main)](https://github.com/Cloud-Exit/ebpf-firewall/commits/main)
+
 `ebpf-firewall-k8s` is a node-local Kubernetes firewall daemon that uses eBPF TC ingress filters to allow protected TCP and UDP traffic only from approved IPv4 sources.
 
 The daemon runs as a privileged DaemonSet, attaches an eBPF classifier to configured host interfaces, and keeps its allowlist in eBPF maps. Configuration is provided through a mounted ConfigMap directory and is polled on a refresh interval, so updates are picked up without talking to the Kubernetes API.
