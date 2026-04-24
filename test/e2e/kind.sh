@@ -127,7 +127,10 @@ kubectl -n e2e create configmap allowlist \
   --from-literal=allowlist.txt="203.0.113.1/32" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-sleep 20
+kubectl -n e2e rollout restart deployment/allowlist-server
+kubectl -n e2e rollout status deployment/allowlist-server --timeout=120s
+
+sleep 8
 
 kubectl -n e2e run deny-check \
   --rm -i --restart=Never \
