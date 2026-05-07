@@ -13,6 +13,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
+	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -59,7 +60,7 @@ type Engine struct {
 	logger  *log.Logger
 
 	mu       sync.Mutex
-	attached map[string]struct{}
+	attached map[string]link.Link
 }
 
 func New(maxEntries uint32, logger *log.Logger) (*Engine, error) {
@@ -83,7 +84,7 @@ func New(maxEntries uint32, logger *log.Logger) (*Engine, error) {
 	return &Engine{
 		objects:  objects,
 		logger:   logger,
-		attached: map[string]struct{}{},
+		attached: map[string]link.Link{},
 	}, nil
 }
 
@@ -91,6 +92,9 @@ func (e *Engine) Close() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	for _, l := range e.attached {
+		l.Close()
+	}
 	e.objects.Close()
 }
 
@@ -139,14 +143,15 @@ func (e *Engine) attachMatchingInterfaces(globs []string) error {
 		if _, ok := e.attached[name]; ok {
 			continue
 		}
-		link, err := netlink.LinkByName(name)
+		iface, err := netlink.LinkByName(name)
 		if err != nil {
 			return fmt.Errorf("load interface %s: %w", name, err)
 		}
-		if err := attach(link, e.objects.Program); err != nil {
-			return fmt.Errorf("attach tc ingress filter to %s: %w", name, err)
+		l, err := attach(iface, e.objects.Program)
+		if err != nil {
+			return fmt.Errorf("attach tcx ingress filter to %s: %w", name, err)
 		}
-		e.attached[name] = struct{}{}
+		e.attached[name] = l
 		e.logger.Printf("attached ingress eBPF filter interface=%s", name)
 	}
 
@@ -163,34 +168,13 @@ func matchesAny(name string, globs []string) bool {
 	return false
 }
 
-func attach(link netlink.Link, program *ebpf.Program) error {
-	attrs := link.Attrs()
-	qdisc := &netlink.GenericQdisc{
-		QdiscAttrs: netlink.QdiscAttrs{
-			LinkIndex: attrs.Index,
-			Handle:    netlink.MakeHandle(0xffff, 0),
-			Parent:    netlink.HANDLE_CLSACT,
-		},
-		QdiscType: "clsact",
-	}
-	if err := netlink.QdiscAdd(qdisc); err != nil && !errors.Is(err, unix.EEXIST) {
-		return err
-	}
-
-	filter := &netlink.BpfFilter{
-		FilterAttrs: netlink.FilterAttrs{
-			LinkIndex: attrs.Index,
-			Parent:    netlink.HANDLE_MIN_INGRESS,
-			Handle:    netlink.MakeHandle(0, 1),
-			Protocol:  unix.ETH_P_ALL,
-			Priority:  1,
-		},
-		Fd:           program.FD(),
-		Name:         "allowfw",
-		DirectAction: true,
-	}
-
-	return netlink.FilterReplace(filter)
+func attach(iface netlink.Link, program *ebpf.Program) (link.Link, error) {
+	return link.AttachTCX(link.TCXOptions{
+		Interface: iface.Attrs().Index,
+		Program:   program,
+		Attach:    ebpf.AttachTCXIngress,
+		Anchor:    link.Tail(),
+	})
 }
 
 func replacePorts(m *ebpf.Map, settings *ebpf.Map, ports []uint16, protectAllPorts bool) error {
@@ -292,6 +276,7 @@ func ingressInstructions() asm.Instructions {
 		asm.JNE.Imm(asm.R0, ethPIP, "allow"),
 
 		asm.LoadAbs(23, asm.Byte),
+		asm.Mov.Reg(asm.R8, asm.R0), // save protocol; R8 used below for TCP flag check
 		asm.JEq.Imm(asm.R0, ipProtoTCP, "parse_ports"),
 		asm.JNE.Imm(asm.R0, ipProtoUDP, "allow"),
 
@@ -305,7 +290,17 @@ func ingressInstructions() asm.Instructions {
 		asm.Mov.Reg(asm.R7, asm.R0),
 		asm.Add.Imm(asm.R7, 14),
 
-		asm.LoadInd(asm.R0, asm.R7, 2, asm.Half),
+		// For TCP, only enforce the allowlist on new inbound connections (pure SYN).
+		// Packets that are responses to connections initiated by the node (established,
+		// SYN-ACK, FIN, RST, etc.) are let through unconditionally, which fixes DNS,
+		// image pulls, API server responses, and konnectivity without requiring their
+		// source IPs in the allowlist.
+		asm.JNE.Imm(asm.R8, ipProtoTCP, "load_dport"),
+		asm.LoadInd(asm.R0, asm.R7, 13, asm.Byte), // TCP flags byte
+		asm.And.Imm(asm.R0, 0x12),                  // isolate SYN(0x02) and ACK(0x10)
+		asm.JNE.Imm(asm.R0, 0x02, "allow"),          // not a pure SYN → allow
+
+		asm.LoadInd(asm.R0, asm.R7, 2, asm.Half).WithSymbol("load_dport"),
 		asm.StoreMem(asm.R10, -2, asm.R0, asm.Half),
 
 		asm.StoreImm(asm.R10, -12, 0, asm.Word),
@@ -317,8 +312,10 @@ func ingressInstructions() asm.Instructions {
 		asm.LoadMem(asm.R0, asm.R0, 0, asm.Byte),
 		asm.JNE.Imm(asm.R0, 0, "check_source"),
 
-		asm.LoadMapPtr(asm.R1, 0).WithReference("protected_ports"),
-		asm.Mov.Reg(asm.R2, asm.R10).WithSymbol("check_port_map"),
+		// fix: label must be on LoadMapPtr so R1 is always loaded before the lookup,
+		// even when the settings map returned NULL and we jumped here directly.
+		asm.LoadMapPtr(asm.R1, 0).WithReference("protected_ports").WithSymbol("check_port_map"),
+		asm.Mov.Reg(asm.R2, asm.R10),
 		asm.Add.Imm(asm.R2, -2),
 		asm.FnMapLookupElem.Call(),
 		asm.JEq.Imm(asm.R0, 0, "allow"),
